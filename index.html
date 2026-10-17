@@ -64,6 +64,8 @@
             padding: 1.2rem;
             border-radius: 1.5rem;
             line-height: 1.6;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
             animation: fadeIn 0.4s ease-out;
         }
 
@@ -126,9 +128,14 @@
             transition: transform 0.2s, background 0.3s;
         }
 
-        button:hover {
+        button:hover:not(:disabled) {
             background: #9067ff;
             transform: translateY(-2px);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: wait;
         }
 
         img.dog-pic {
@@ -179,30 +186,43 @@
             return str.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         }
 
+        // Plain text: escape it, then show **bold** as bold
+        function formatText(str) {
+            return escapeHtml(str).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        }
+
+        // A URL becomes a link, or an image for dog pics. Trailing punctuation such as
+        // "." or ")" is kept out of the URL so the address still works.
+        function formatUrl(raw) {
+            const [, url, trail] = raw.match(/^(.*?)([.,;:!?)\]*]*)$/);
+            const safeUrl = escapeHtml(url);
+            const html = (/\.(jpe?g|gif|png)$/i.test(url) || url.includes('dog.ceo'))
+                ? `<br><img src="${safeUrl}" class="dog-pic" alt="Dog Picture">`
+                : `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--wizard-gold)">${safeUrl}</a>`;
+            return html + escapeHtml(trail);
+        }
+
         function addMessage(text, isUser = false) {
             const msg = document.createElement('div');
             msg.className = `message ${isUser ? 'user-message' : 'wizard-message'}`;
 
-            // Escape first so model/tool output can't inject HTML, then linkify
-            const safeText = escapeHtml(String(text ?? ''));
-            // Detect URLs (specifically for dog pics)
-            const urlRegex = /(https?:\/\/[^\s<]+)/g;
-            const processedText = safeText.replace(urlRegex, (url) => {
-                if (url.match(/\.(jpeg|jpg|gif|png)$/) || url.includes('dog.ceo')) {
-                    return `<br><img src="${url}" class="dog-pic" alt="Dog Picture">`;
-                }
-                return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--wizard-gold)">${url}</a>`;
-            });
-
-            msg.innerHTML = processedText;
+            // Unwrap markdown links/images like ![dog](url) to the bare url, then split out URLs.
+            // Every piece is escaped, so model/tool output can't inject HTML.
+            const plain = String(text ?? '').replace(/!?\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/g, '$1');
+            const parts = plain.split(/(https?:\/\/[^\s<>"'`]+)/g);
+            msg.innerHTML = parts.map((part, i) => (i % 2 ? formatUrl(part) : formatText(part))).join('');
             chatContainer.appendChild(msg);
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
+        let isLoading = false;
+
         async function handleChat() {
             const message = userInput.value.trim();
-            if (!message) return;
+            if (!message || isLoading) return;
 
+            isLoading = true;
+            sendBtn.disabled = true;
             addMessage(message, true);
             userInput.value = '';
 
@@ -224,6 +244,10 @@
             } catch (err) {
                 chatContainer.removeChild(typing);
                 addMessage("Alas! My crystal ball is cloudy. Please try again.");
+            } finally {
+                isLoading = false;
+                sendBtn.disabled = false;
+                userInput.focus();
             }
         }
 

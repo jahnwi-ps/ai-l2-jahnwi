@@ -95,7 +95,8 @@ class WizardBrain:
                 try:
                     result = await self.session.call_tool(tname, args)
                     payload = result.content[0].text if result.content else str(result)
-                    print(f"  [Tool {tname} success]")
+                    # A tool that raises comes back as isError=True rather than an exception
+                    print(f"  [Tool {tname} {'failed: ' + payload if result.isError else 'success'}]")
                     history.append({"role": "user", "content": f"Observation: {payload}"})
                 except Exception as e:
                     print(f"  [Tool Error in {tname}: {e}]")
